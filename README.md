@@ -1,1 +1,1 @@
-//Skypulse geliştirme aşamsası kodları
+
