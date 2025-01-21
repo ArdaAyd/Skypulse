@@ -4,7 +4,7 @@ from ultralytics import YOLO
 import cv2
 
 # Load YOLO model
-model = YOLO("yolo11n-seg.pt")
+model = YOLO("yolo11n.pt")
 
 def process_frame(cap):
     ret, frame = cap.read()
