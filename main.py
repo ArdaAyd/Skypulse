@@ -1,22 +1,52 @@
 import customtkinter as ctk
 import cv2
 import sys
-from io import StringIO
 from PIL import Image, ImageTk
-from imageProcessor import process_frame
-from data import get_numeric_data1, get_numeric_data2, get_numeric_data3
+from ultralytics import YOLO
+import os
+import argparse
 
-# Tema
+# Tema ayarları
 ctk.set_appearance_mode("dark")
 ctk.set_default_color_theme("blue")
 
+# Argümanları yakala
+parser = argparse.ArgumentParser()
+parser.add_argument("--selected_class", type=str, default="Default", help="Select class: Default, person or car")
+args = parser.parse_args()
+
+# Root penceresini oluştur
 root = ctk.CTk()
 root.title("Sky Pulse Management")
-cap = cv2.VideoCapture(0)
 
-# Kamera çözünürlüğünü 720p'ye ayarla
-cap.set(cv2.CAP_PROP_FRAME_WIDTH, 1280)
-cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 720)
+# Seçenekler
+selected_class = ctk.StringVar(value=args.selected_class)
+
+# Kamera ayarları
+cap = cv2.VideoCapture(0)
+if not cap.isOpened():
+    print("Kamera açılamadı! Programdan çıkılıyor...")
+    sys.exit()
+
+cap.set(cv2.CAP_PROP_FRAME_WIDTH, 640)
+cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 480)
+
+# YOLO modelini yükle
+model = YOLO("yolo11n.pt")
+
+detected_objects = {}
+frame_count = 0
+
+
+def restart_program_with_class(selected):
+    """Seçilen sınıfa göre programı yeniden başlatır."""
+    current_class = selected_class.get()
+    if current_class != selected:
+        selected_class.set(selected)  # Seçilen sınıfı güncelle
+        root.quit()  # GUI'yi sonlandır
+        root.destroy()  # GUI'yi yok et
+        os.execl(sys.executable, sys.executable, *sys.argv)  # Programı yeniden başlat
+
 
 def buttonOperations(frame, label):
     button1 = ctk.CTkButton(frame, text="Yaklaş", command=lambda: on_button_click(1, label), fg_color="#006400", hover_color="green", text_color="white")
@@ -28,38 +58,43 @@ def buttonOperations(frame, label):
     button3 = ctk.CTkButton(frame, text="Saldır", command=lambda: on_button_click(3, label), fg_color="#8B0000", hover_color="red", text_color="white")
     button3.grid(row=2, column=0, padx=10, pady=10, sticky="nsew")
 
-    # Çıkış düğmesi ekleme
     exit_button = ctk.CTkButton(frame, text="Çıkış", command=close_program, fg_color="#1C1C1C", hover_color="gray", text_color="white")
     exit_button.grid(row=3, column=0, padx=10, pady=10, sticky="nsew")
 
+    selection_menu = ctk.CTkOptionMenu(frame, values=["Default", "person", "car"], variable=selected_class, command=restart_program_with_class)
+    selection_menu.grid(row=0, column=1, padx=10, pady=10, sticky="nsew")
+
+
 def on_button_click(frame_number, label):
-    old_stdout = sys.stdout
-    sys.stdout = StringIO()
-    print(f"Frame {frame_number} butonuna tıklandı!")
-    label.configure(text=sys.stdout.getvalue())
-    sys.stdout = old_stdout   
+    label.configure(text=f"Frame {frame_number} butonuna tıklandı!")
+
 
 def updateVideo(cap, canvas, label):
-    frame, classified_objects = process_frame(cap)
-    if frame is not None:
-        image = Image.fromarray(frame)
-        photo = ImageTk.PhotoImage(image=image)
-        canvas.create_image(0, 0, image=photo, anchor="nw")
-        canvas.image = photo
+    global frame_count
+    try:
+        frame_count += 1
+        if frame_count % 5 != 0:  # Her 5 karede bir işlem yap
+            return canvas.after(30, updateVideo, cap, canvas, label)
 
-        # Tespit edilen nesneleri etiketiyle göster
-        if 'person1' in classified_objects:
-            label_text = f"Detected: {classified_objects['person1'][0]} with confidence {classified_objects['person1'][1]:.2f}"
+        detected_objects.clear()
+        frame, classified_objects = process_frame(cap)
+        if frame is not None:
+            image = Image.fromarray(frame)
+            photo = ImageTk.PhotoImage(image=image)
+            canvas.create_image(0, 0, image=photo, anchor="nw")
+            canvas.image = photo
+
+            label_text = ""
+            for idx, (obj, confidence) in enumerate(classified_objects.get(selected_class.get(), []), start=1):
+                detected_objects[f"{selected_class.get()}{idx}"] = (obj, confidence)
+                label_text += f"{selected_class.get().capitalize()}{idx}: Confidence {confidence:.2f}\n"
+
             label.configure(text=label_text)
-        
-    canvas.after(10, updateVideo, cap, canvas, label)
+    except Exception as e:
+        print(f"Hata oluştu: {e}")
 
-def updateData(label, root):
-    value1 = get_numeric_data1()
-    value2 = get_numeric_data2()
-    value3 = get_numeric_data3()
-    label.configure(text=f"Value1: {value1}\nValue2: {value2}\nValue3: {value3}")
-    root.after(1000, updateData, label, root)
+    canvas.after(30, updateVideo, cap, canvas, label)
+
 
 def createGUI(root):
     root.grid_columnconfigure(0, weight=2, uniform="column")
@@ -82,19 +117,51 @@ def createGUI(root):
     canvas = ctk.CTkCanvas(frame1)
     canvas.pack(fill="both", expand=True)
 
-    label2 = ctk.CTkLabel(frame2, text_color="white")
-    label2.pack(pady=20)
-
     label3 = ctk.CTkLabel(frame3, text="", text_color="white")
     label3.pack(pady=20)
 
-    updateVideo(cap, canvas, label3)
-    updateData(label2, root)
     buttonOperations(frame4, label3)
+
+    updateVideo(cap, canvas, label3)
+
+
+def process_frame(cap):
+    ret, frame = cap.read()
+    if not ret:
+        return None, {}
+
+    rgb_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+
+    if selected_class.get() == "Default":
+        class_idx = None
+    elif selected_class.get() == "person":
+        class_idx = 0
+    elif selected_class.get() == "car":
+        class_idx = [2, 3, 5, 7]
+    else:
+        return None, {}
+
+    results = model.track(rgb_frame, classes=class_idx, persist=False)
+
+    output_frame = results[0].plot()
+
+    classified_objects = {}
+    if class_idx is not None:
+        for result in results[0].boxes:
+            cls = result.cls.item()
+            if cls in (class_idx if isinstance(class_idx, list) else [class_idx]):
+                if selected_class.get() not in classified_objects:
+                    classified_objects[selected_class.get()] = []
+                classified_objects[selected_class.get()].append((result.xyxy.numpy(), result.conf.item()))
+
+    return output_frame, classified_objects
+
 
 def close_program():
     cap.release()
+    cv2.destroyAllWindows()
     root.destroy()
+
 
 createGUI(root)
 root.mainloop()
