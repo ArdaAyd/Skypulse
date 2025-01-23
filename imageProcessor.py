@@ -9,13 +9,13 @@ parser.add_argument("--video_path", type=str, default="", help="Path to video fi
 args = parser.parse_args()
 
 # YOLO modelini yükle
-model = YOLO("yolo11n-obb.pt")
+model = YOLO("yolo11n.pt")
 
 # Seçilen sınıfı belirle (0: person, 2/3/5/7: car gibi)
 selected_class = None
-if args.selected_class == "person":
+if args.selected_class == "Person":
     selected_class = 0
-elif args.selected_class == "car":
+elif args.selected_class == "Car":
     selected_class = [2, 3, 5, 7]
 elif args.selected_class == "Default":
     selected_class = None
@@ -49,7 +49,12 @@ def process_frame(cap, frame_count):
     rgb_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
 
     # YOLO ile sınıfı belirle ve sonuçları al
-    results = model.track(rgb_frame, classes=selected_class, persist=False)
+    results = model.track(rgb_frame, 
+                         classes=selected_class,
+                         persist=False,
+                         conf=0.25,
+                         iou=0.45,
+                         imgsz=640)
 
     # Çıktıları çerçeveye çiz
     output_frame = results[0].plot()

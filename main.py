@@ -6,6 +6,7 @@ from ultralytics import YOLO
 import os
 import argparse
 from data import get_numeric_data1, get_numeric_data2, get_numeric_data3
+import time
 
 # Debug için dosya yolunu kontrol et
 print(f"Çalışma dizini: {os.getcwd()}")
@@ -35,6 +36,9 @@ model = YOLO("yolo11n.pt")
 detected_people = {}
 frame_count = 0
 
+# Global değişkenler ekle (dosyanın başına)
+prev_frame_time = 0
+new_frame_time = 0
 
 def restart_program_with_class(selected):
     """Seçilen sınıfa göre programı yeniden başlatır."""
@@ -72,8 +76,9 @@ def updateVideo(cap, canvas, label):
     global frame_count
     try:
         frame_count += 1
-        if frame_count % 5 != 0:  # Her 5 karede bir işlem yap
-            return canvas.after(30, updateVideo, cap, canvas, label)
+        # Her 2 karede bir işlem yap
+        if frame_count % 2 != 0:  
+            return canvas.after(1, updateVideo, cap, canvas, label)  # 30ms'den 1ms'ye düşürdük
 
         detected_people.clear()
         frame, classified_objects = process_frame(cap, frame_count)
@@ -92,7 +97,7 @@ def updateVideo(cap, canvas, label):
     except Exception as e:
         print(f"Hata oluştu: {e}")
 
-    canvas.after(30, updateVideo, cap, canvas, label)
+    canvas.after(1, updateVideo, cap, canvas, label)  # Burayı da 1ms'ye düşürdük
 
 
 def update_values(values_label):
@@ -162,10 +167,17 @@ def createGUI(root):
 
 
 def process_frame(cap, frame_count):
+    global prev_frame_time, new_frame_time
     ret, frame = cap.read()
     if not ret:
         return None, {}
 
+    # FPS hesaplama
+    new_frame_time = time.time()
+    fps = 1/(new_frame_time-prev_frame_time) if prev_frame_time > 0 else 0
+    prev_frame_time = new_frame_time
+    fps = int(fps)
+    
     rgb_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
 
     if selected_class.get() == "Default":
@@ -177,8 +189,19 @@ def process_frame(cap, frame_count):
     else:
         class_indices = None
 
-    results = model.track(rgb_frame, classes=class_indices, persist=True)
+    # YOLO modelini optimize edilmiş parametrelerle çalıştır
+    results = model.track(rgb_frame, 
+                         classes=class_indices, 
+                         persist=False,
+                         conf=0.25,      # Güven eşiğini artırdık
+                         iou=0.45,       # IOU eşiğini artırdık
+                         imgsz=640)      # Görüntü boyutunu küçülttük
+
     output_frame = results[0].plot()
+    
+    # FPS'i output frame üzerine yazma
+    cv2.putText(output_frame, f"FPS: {fps}", (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 
+                1, (100, 255, 0), 2, cv2.LINE_AA)
 
     classified_objects = {}
     for result in results[0].boxes:
