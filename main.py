@@ -5,36 +5,34 @@ from PIL import Image, ImageTk
 from ultralytics import YOLO
 import os
 import argparse
+from data import get_numeric_data1, get_numeric_data2, get_numeric_data3
+
+# Debug için dosya yolunu kontrol et
+print(f"Çalışma dizini: {os.getcwd()}")
 
 # Tema ayarları
 ctk.set_appearance_mode("dark")
 ctk.set_default_color_theme("blue")
 
-# Argümanları yakala
-parser = argparse.ArgumentParser()
-parser.add_argument("--selected_class", type=str, default="Default", help="Select class: Default, person or car")
-args = parser.parse_args()
-
 # Root penceresini oluştur
 root = ctk.CTk()
 root.title("Sky Pulse Management")
 
-# Seçenekler
-selected_class = ctk.StringVar(value=args.selected_class)
+# `selected_class` değişkenini root penceresinden sonra oluştur
+selected_class = ctk.StringVar(value="Default")
 
-# Kamera ayarları
-cap = cv2.VideoCapture(0)
+# Video yolu (doğrudan buraya ekledim)
+video_path = "/Users/ardaaydin/Desktop/Skypulse/arabalar2.mp4"
+cap = cv2.VideoCapture(video_path)
+
 if not cap.isOpened():
-    print("Kamera açılamadı! Programdan çıkılıyor...")
+    print("Video açılamadı! Programdan çıkılıyor...")
     sys.exit()
-
-cap.set(cv2.CAP_PROP_FRAME_WIDTH, 640)
-cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 480)
 
 # YOLO modelini yükle
 model = YOLO("yolo11n.pt")
 
-detected_objects = {}
+detected_people = {}
 frame_count = 0
 
 
@@ -61,6 +59,7 @@ def buttonOperations(frame, label):
     exit_button = ctk.CTkButton(frame, text="Çıkış", command=close_program, fg_color="#1C1C1C", hover_color="gray", text_color="white")
     exit_button.grid(row=3, column=0, padx=10, pady=10, sticky="nsew")
 
+    # Seçim Menüsünü Yaklaş butonunun yanına koy
     selection_menu = ctk.CTkOptionMenu(frame, values=["Default", "person", "car"], variable=selected_class, command=restart_program_with_class)
     selection_menu.grid(row=0, column=1, padx=10, pady=10, sticky="nsew")
 
@@ -76,8 +75,8 @@ def updateVideo(cap, canvas, label):
         if frame_count % 5 != 0:  # Her 5 karede bir işlem yap
             return canvas.after(30, updateVideo, cap, canvas, label)
 
-        detected_objects.clear()
-        frame, classified_objects = process_frame(cap)
+        detected_people.clear()
+        frame, classified_objects = process_frame(cap, frame_count)
         if frame is not None:
             image = Image.fromarray(frame)
             photo = ImageTk.PhotoImage(image=image)
@@ -85,15 +84,27 @@ def updateVideo(cap, canvas, label):
             canvas.image = photo
 
             label_text = ""
-            for idx, (obj, confidence) in enumerate(classified_objects.get(selected_class.get(), []), start=1):
-                detected_objects[f"{selected_class.get()}{idx}"] = (obj, confidence)
-                label_text += f"{selected_class.get().capitalize()}{idx}: Confidence {confidence:.2f}\n"
+            for idx, (obj, confidence, track_id) in enumerate(classified_objects.get(selected_class.get(), []), start=1):
+                detected_people[f"{selected_class.get()}{idx}"] = (obj, confidence)
+                label_text += f"ID:{int(track_id)} {selected_class.get().capitalize()}{idx}: Confidence {confidence:.2f}\n"
 
             label.configure(text=label_text)
     except Exception as e:
         print(f"Hata oluştu: {e}")
 
     canvas.after(30, updateVideo, cap, canvas, label)
+
+
+def update_values(values_label):
+    value1 = get_numeric_data1()
+    value2 = get_numeric_data2()
+    value3 = get_numeric_data3()
+    
+    values_text = f"Value1: {value1}\nValue2: {value2}\nValue3: {value3}"
+    values_label.configure(text=values_text)
+    
+    # 500 ms (0.5 saniye) sonra tekrar çağır
+    values_label.after(500, update_values, values_label)
 
 
 def createGUI(root):
@@ -107,6 +118,31 @@ def createGUI(root):
 
     frame2 = ctk.CTkFrame(root, corner_radius=10, border_width=2, border_color="blue")
     frame2.grid(row=0, column=1, padx=5, pady=5, sticky="nsew")
+
+    # Logo ve değerleri frame2'ye ekle
+    try:
+        logo_img = Image.open("main.png")
+        logo_img = logo_img.resize((200, 200))
+        logo_photo = ImageTk.PhotoImage(logo_img)
+        logo_label = ctk.CTkLabel(frame2, image=logo_photo, text="")
+        logo_label.image = logo_photo
+        logo_label.pack(pady=20)
+
+        # Değerler için label oluştur
+        values_label = ctk.CTkLabel(frame2, text="", text_color="white")
+        values_label.pack(pady=10)
+        
+        # Değerleri güncellemeye başla
+        update_values(values_label)
+
+        # Seçenek menüsü
+        options_label = ctk.CTkLabel(frame2, text="Options", text_color="white")
+        options_label.pack(pady=10)
+        options_menu = ctk.CTkOptionMenu(frame2, values=["Düz Saldır", "Zikzak çiz", "Dönerek Saldır"])
+        options_menu.pack(pady=5)
+
+    except Exception as e:
+        print(f"Logo yüklenirken hata oluştu: {e}")
 
     frame3 = ctk.CTkFrame(root, corner_radius=10, border_width=2, border_color="green")
     frame3.grid(row=1, column=0, padx=5, pady=5, sticky="nsew")
@@ -125,7 +161,7 @@ def createGUI(root):
     updateVideo(cap, canvas, label3)
 
 
-def process_frame(cap):
+def process_frame(cap, frame_count):
     ret, frame = cap.read()
     if not ret:
         return None, {}
@@ -133,26 +169,26 @@ def process_frame(cap):
     rgb_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
 
     if selected_class.get() == "Default":
-        class_idx = None
+        class_indices = None
     elif selected_class.get() == "person":
-        class_idx = 0
+        class_indices = [0]
     elif selected_class.get() == "car":
-        class_idx = [2, 3, 5, 7]
+        class_indices = [2, 3, 5, 7]
     else:
-        return None, {}
+        class_indices = None
 
-    results = model.track(rgb_frame, classes=class_idx, persist=False)
-
+    results = model.track(rgb_frame, classes=class_indices, persist=True)
     output_frame = results[0].plot()
 
     classified_objects = {}
-    if class_idx is not None:
-        for result in results[0].boxes:
-            cls = result.cls.item()
-            if cls in (class_idx if isinstance(class_idx, list) else [class_idx]):
-                if selected_class.get() not in classified_objects:
-                    classified_objects[selected_class.get()] = []
-                classified_objects[selected_class.get()].append((result.xyxy.numpy(), result.conf.item()))
+    for result in results[0].boxes:
+        cls = result.cls.item()
+        track_id = result.id.item() if result.id is not None else -1  # ID'yi al, yoksa -1 kullan
+        
+        if selected_class.get() == "Default" or cls in class_indices:
+            if selected_class.get() not in classified_objects:
+                classified_objects[selected_class.get()] = []
+            classified_objects[selected_class.get()].append((result.xyxy.numpy(), result.conf.item(), track_id))
 
     return output_frame, classified_objects
 
