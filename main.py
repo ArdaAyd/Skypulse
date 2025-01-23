@@ -60,7 +60,7 @@ def buttonOperations(frame, label):
     exit_button.grid(row=3, column=0, padx=10, pady=10, sticky="nsew")
 
     # Seçim Menüsünü Yaklaş butonunun yanına koy
-    selection_menu = ctk.CTkOptionMenu(frame, values=["Default", "person", "car"], variable=selected_class, command=restart_program_with_class)
+    selection_menu = ctk.CTkOptionMenu(frame, values=["Default", "Person", "Car"], variable=selected_class, command=restart_program_with_class)
     selection_menu.grid(row=0, column=1, padx=10, pady=10, sticky="nsew")
 
 
@@ -136,7 +136,7 @@ def createGUI(root):
         update_values(values_label)
 
         # Seçenek menüsü
-        options_label = ctk.CTkLabel(frame2, text="Options", text_color="white")
+        options_label = ctk.CTkLabel(frame2, text="Saldırma Yöntemi", text_color="white")
         options_label.pack(pady=10)
         options_menu = ctk.CTkOptionMenu(frame2, values=["Düz Saldır", "Zikzak çiz", "Dönerek Saldır"])
         options_menu.pack(pady=5)
@@ -170,9 +170,9 @@ def process_frame(cap, frame_count):
 
     if selected_class.get() == "Default":
         class_indices = None
-    elif selected_class.get() == "person":
+    elif selected_class.get() == "Person":
         class_indices = [0]
-    elif selected_class.get() == "car":
+    elif selected_class.get() == "Car":
         class_indices = [2, 3, 5, 7]
     else:
         class_indices = None
