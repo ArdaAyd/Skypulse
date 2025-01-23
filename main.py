@@ -7,6 +7,7 @@ import os
 import argparse
 from data import get_numeric_data1, get_numeric_data2, get_numeric_data3
 import time
+from imageProcessor import ImageProcessor
 
 # Debug için dosya yolunu kontrol et
 print(f"Çalışma dizini: {os.getcwd()}")
@@ -31,7 +32,7 @@ if not cap.isOpened():
     sys.exit()
 
 # YOLO modelini yükle
-model = YOLO("yolo11n.pt")
+image_processor = ImageProcessor("yolo11n.pt")
 
 detected_people = {}
 frame_count = 0
@@ -78,10 +79,15 @@ def updateVideo(cap, canvas, label):
         frame_count += 1
         # Her 2 karede bir işlem yap
         if frame_count % 2 != 0:  
-            return canvas.after(1, updateVideo, cap, canvas, label)  # 30ms'den 1ms'ye düşürdük
+            return canvas.after(1, updateVideo, cap, canvas, label)
+
+        ret, frame = cap.read()
+        if not ret:
+            print("Video frame'i okunamadı")
+            return
 
         detected_people.clear()
-        frame, classified_objects = process_frame(cap, frame_count)
+        frame, classified_objects = image_processor.process_frame(frame, selected_class.get())
         if frame is not None:
             image = Image.fromarray(frame)
             photo = ImageTk.PhotoImage(image=image)
@@ -97,7 +103,7 @@ def updateVideo(cap, canvas, label):
     except Exception as e:
         print(f"Hata oluştu: {e}")
 
-    canvas.after(1, updateVideo, cap, canvas, label)  # Burayı da 1ms'ye düşürdük
+    canvas.after(1, updateVideo, cap, canvas, label)
 
 
 def update_values(values_label):
@@ -128,7 +134,7 @@ def createGUI(root):
     try:
         logo_img = Image.open("main.png")
         logo_img = logo_img.resize((200, 200))
-        logo_photo = ImageTk.PhotoImage(logo_img)
+        logo_photo = ctk.CTkImage(light_image=logo_img, dark_image=logo_img, size=(200, 200))
         logo_label = ctk.CTkLabel(frame2, image=logo_photo, text="")
         logo_label.image = logo_photo
         logo_label.pack(pady=20)
@@ -165,55 +171,6 @@ def createGUI(root):
 
     updateVideo(cap, canvas, label3)
 
-
-def process_frame(cap, frame_count):
-    global prev_frame_time, new_frame_time
-    ret, frame = cap.read()
-    if not ret:
-        return None, {}
-
-    # FPS hesaplama
-    new_frame_time = time.time()
-    fps = 1/(new_frame_time-prev_frame_time) if prev_frame_time > 0 else 0
-    prev_frame_time = new_frame_time
-    fps = int(fps)
-    
-    rgb_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-
-    if selected_class.get() == "Default":
-        class_indices = None
-    elif selected_class.get() == "Person":
-        class_indices = [0]
-    elif selected_class.get() == "Car":
-        class_indices = [2, 3, 5, 7]
-    else:
-        class_indices = None
-
-    # YOLO modelini optimize edilmiş parametrelerle çalıştır
-    results = model.track(rgb_frame, 
-                         classes=class_indices, 
-                         persist=False,
-                         conf=0.25,      # Güven eşiğini artırdık
-                         iou=0.45,       # IOU eşiğini artırdık
-                         imgsz=640)      # Görüntü boyutunu küçülttük
-
-    output_frame = results[0].plot()
-    
-    # FPS'i output frame üzerine yazma
-    cv2.putText(output_frame, f"FPS: {fps}", (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 
-                1, (100, 255, 0), 2, cv2.LINE_AA)
-
-    classified_objects = {}
-    for result in results[0].boxes:
-        cls = result.cls.item()
-        track_id = result.id.item() if result.id is not None else -1  # ID'yi al, yoksa -1 kullan
-        
-        if selected_class.get() == "Default" or cls in class_indices:
-            if selected_class.get() not in classified_objects:
-                classified_objects[selected_class.get()] = []
-            classified_objects[selected_class.get()].append((result.xyxy.numpy(), result.conf.item(), track_id))
-
-    return output_frame, classified_objects
 
 
 def close_program():
