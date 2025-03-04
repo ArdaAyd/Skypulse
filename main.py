@@ -24,7 +24,7 @@ root.title("Sky Pulse Management")
 selected_class = ctk.StringVar(value="Default")
 
 # Video yolu (doğrudan buraya ekledim)
-video_path = "/Users/ardaaydin/Desktop/Skypulse/arabalar2.mp4"
+video_path = "/Users/ardaaydin/Desktop/Skypulse/arabavid.mp4"
 cap = cv2.VideoCapture(video_path)
 
 if not cap.isOpened():
@@ -32,7 +32,7 @@ if not cap.isOpened():
     sys.exit()
 
 # YOLO modelini yükle
-image_processor = ImageProcessor("yolo11n.pt")
+image_processor = ImageProcessor("best.pt")
 
 detected_people = {}
 frame_count = 0

@@ -7,6 +7,7 @@ class ImageProcessor:
         self.model = YOLO(model_path)
         self.prev_frame_time = 0
         self.new_frame_time = 0
+        self.tracked_objects = {}  # Takip edilen nesneleri saklamak için
         
     def process_frame(self, frame, selected_class):
         self.new_frame_time = time.time()
@@ -27,7 +28,7 @@ class ImageProcessor:
 
         results = self.model.track(rgb_frame, 
                                  classes=class_indices, 
-                                 persist=False,
+                                 persist=True,
                                  conf=0.25,
                                  iou=0.45,
                                  imgsz=640)
@@ -41,11 +42,20 @@ class ImageProcessor:
         for result in results[0].boxes:
             cls = result.cls.item()
             track_id = result.id.item() if result.id is not None else -1
+            bbox = result.xyxy.numpy()
+            conf = result.conf.item()
             
             if selected_class == "Default" or cls in class_indices:
                 if selected_class not in classified_objects:
                     classified_objects[selected_class] = []
-                classified_objects[selected_class].append((result.xyxy.numpy(), result.conf.item(), track_id))
+                classified_objects[selected_class].append((bbox, conf, track_id))
+                
+                # Takip edilen nesneleri kaydet
+                self.tracked_objects[track_id] = bbox
+                
+                # ID çizimini kaldırdık, sadece YOLO'nun kendi çizimi kalacak
+                # x1, y1, x2, y2 = map(int, bbox[0])
+                # cv2.rectangle(output_frame, (x1, y1), (x2, y2), (255, 0, 0), 2)
+                # cv2.putText(output_frame, f"ID: {track_id}", (x1, y1 - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 0, 0), 2)
 
         return output_frame, classified_objects
-
